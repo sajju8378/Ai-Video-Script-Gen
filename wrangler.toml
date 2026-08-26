@@ -1,0 +1,3 @@
+name = "ai-video-script-gen"
+main = "src/index.js"
+compatibility_date = "2026-08-26"
