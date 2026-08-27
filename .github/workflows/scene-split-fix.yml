@@ -1,0 +1,44 @@
+name: Apply scene splitting update
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  update:
+    if: "!contains(github.event.head_commit.message, 'Apply smarter scene splitting')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update scene splitter
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/index.js')
+          s=p.read_text()
+          a=s.index('function split(t){')
+          b=s.index('function esc(s){', a)
+          new=r'''function split(t){
+var s=String(t||'').replace(/\r/g,'').trim();
+if(!s)return[];
+var blocks=s.split(/\n\s*\n+/).map(function(x){return x.trim()}).filter(Boolean);
+if(blocks.length>1)return blocks;
+var sentences=s.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[s];
+var out=[],buf='',locationWords=/\b(at|inside|outside|near|from|to|into|in|on|under|above|before|after|later|meanwhile|next morning|that night|the next day)\b/i;
+var actionWords=/\b(then|suddenly|finally|begins|begin|starts|start|stops|stop|arrives|arrive|leaves|leave|enters|enter|returns|return|sees|see|meets|meet|attacks|attack|fights|fight|speaks|says|scream|runs|run|flies|fly|drives|drive|falls|fall|jumps|jump|opens|open|closes|close)\b/i;
+function flush(){if(buf.trim()){out.push(buf.trim());buf=''}}
+sentences.forEach(function(raw,i){var sent=raw.trim();if(!sent)return;var candidate=(buf?buf+' ':'')+sent;var boundary=locationWords.test(sent)&&i>0;var actionBoundary=actionWords.test(sent)&&count(buf)>32;if(boundary||actionBoundary||count(candidate)>55){flush();buf=sent}else buf=candidate});
+flush();
+return out.length?out:[s]
+}
+'''
+          p.write_text(s[:a]+new+s[b:])
+          PY
+      - name: Commit update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/index.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Apply smarter scene splitting'
+          git push
