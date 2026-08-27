@@ -1,9 +1,11 @@
 name = "ai-video-script-gen"
-main = "src/index.js"
+main = "src/app.js"
 compatibility_date = "2026-08-26"
 
 [vars]
 HF_SPACE = "Saravutw/WAN2.2_I2V_LIGHTNING_4-8step_custom"
 
 [ai]
-binding = "AI"
+bindings = [
+  { name = "AI", type = "workers-ai" }
+]
