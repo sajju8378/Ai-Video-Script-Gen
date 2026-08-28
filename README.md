@@ -23,3 +23,5 @@ The first Cloudflare Worker framework is in place. The UI is intentionally minim
 - `POST /api/script/analyze` — initial script-to-scene parser
 
 Future adapters will connect the scene generation pipeline to image/video models without coupling the project model to a specific provider.
+
+<!-- deployment refresh: 2026-08-28 -->
