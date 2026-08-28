@@ -1,0 +1,70 @@
+name: Add script persistence
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, 'Fix persistent script state')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.js
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/app.js')
+          s = p.read_text(encoding='utf-8')
+
+          marker = "var MIN_WORDS=20,scriptEl=document.getElementById('script'),countEl=document.getElementById('count'),validationEl=document.getElementById('validation'),developBtn=document.getElementById('develop'),devStatus=document.getElementById('devStatus'),scenesEl=document.getElementById('scenes'),sceneCard=document.getElementById('sceneCard'),summaryEl=document.getElementById('summary');"
+          inject = marker + """
+  var STORAGE_KEY='aiVideoScriptStudioStateV1';
+  function saveState(){
+    try{
+      localStorage.setItem(STORAGE_KEY,JSON.stringify({
+        script:scriptEl.value,
+        pace:document.getElementById('pace').value,
+        minDuration:document.getElementById('minDuration').value
+      }));
+    }catch(e){}
+  }
+  function restoreState(){
+    try{
+      var raw=localStorage.getItem(STORAGE_KEY);
+      if(!raw)return;
+      var state=JSON.parse(raw)||{};
+      if(typeof state.script==='string')scriptEl.value=state.script;
+      if(state.pace!=null)document.getElementById('pace').value=state.pace;
+      if(state.minDuration!=null)document.getElementById('minDuration').value=state.minDuration;
+      updateCounter();
+      if(words(scriptEl.value)>=MIN_WORDS)setTimeout(function(){develop();},60);
+    }catch(e){updateCounter();}
+  }
+  """
+          if "aiVideoScriptStudioStateV1" not in s:
+              if marker not in s:
+                  raise SystemExit('Expected app.js marker not found')
+              s = s.replace(marker, inject, 1)
+
+          old = "scriptEl.addEventListener('input',updateCounter);scriptEl.addEventListener('change',updateCounter);scriptEl.addEventListener('keyup',updateCounter);"
+          new = "scriptEl.addEventListener('input',function(){saveState();updateCounter();});scriptEl.addEventListener('change',function(){saveState();updateCounter();});scriptEl.addEventListener('keyup',function(){saveState();updateCounter();});document.getElementById('pace').addEventListener('change',saveState);document.getElementById('minDuration').addEventListener('change',saveState);window.addEventListener('beforeunload',saveState);window.addEventListener('load',restoreState);"
+          if old in s:
+              s = s.replace(old,new,1)
+          elif "window.addEventListener('load',restoreState)" not in s:
+              raise SystemExit('Expected script listeners not found')
+
+          p.write_text(s,encoding='utf-8')
+
+      - name: Commit patch and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app.js
+          git rm .github/workflows/persist-script-state.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix persistent script state [skip ci]'
+          git push
