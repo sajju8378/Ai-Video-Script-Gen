@@ -1,0 +1,34 @@
+name: Fix Wan result path
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix Gradio FileData result extraction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/app.js')
+          s = p.read_text()
+          old = "function extractPath(v){if(!v)return null;if(typeof v==='string'){var s=v.trim();if((s[0]==='{'||s[0]==='[')&&s.length<200000){try{return extractPath(JSON.parse(s))}catch{}}if(s.indexOf('/gradio_api/file=')>=0){var m=s.match(/https?:\\/\\/[^\\s\"']+\\/gradio_api\\/file=[^\\s\"']+|\\/gradio_api\\/file=[^\\s\"']+/);return m?m[0]:null}if(/^https?:\\/\\//.test(s)&&/\\.(mp4|webm|mov)(\\?|$)/i.test(s))return s;return null}if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}if(typeof v==='object'){for(var k in v){var b=extractPath(v[k]);if(b)return b}}return null}"
+          new = "function extractPath(v){if(v==null)return null;if(typeof v==='string'){var s=v.trim();if((s[0]==='{'||s[0]==='[')&&s.length<200000){try{return extractPath(JSON.parse(s))}catch{}}if(s.indexOf('/gradio_api/file=')>=0){var m=s.match(/https?:\\/\\/[^\\s\"']+\\/gradio_api\\/file=[^\\s\"']+|\\/gradio_api\\/file=[^\\s\"']+/);return m?m[0]:null}if(/^https?:\\/\\//.test(s)&&/\\.(mp4|webm|mov)(\\?|$)/i.test(s))return s;return null}if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}if(typeof v==='object'){if(typeof v.url==='string'&&v.url)return extractPath(v.url);if(typeof v.path==='string'&&v.path){var p=v.path.trim();if(p.indexOf('/gradio_api/file=')>=0)return extractPath(p);if(p.startsWith('/'))return '/gradio_api/file='+encodeURIComponent(p)}for(var k in v){var b=extractPath(v[k]);if(b)return b}}return null}"
+          if old not in s:
+              raise SystemExit('Target extractPath function not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix Wan Gradio video result extraction [skip ci]'
+          git push
