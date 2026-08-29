@@ -13,7 +13,7 @@ async function videoFile(req,env){const raw=new URL(req.url).searchParams.get('p
 const HTML=String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Video Script Studio</title><style>
 body{font-family:system-ui;margin:0;background:#0b1020;color:#eef2ff}main{max-width:1050px;margin:auto;padding:30px 20px}h1{margin:0 0 8px}.muted{color:#aeb9d6}.version{font-size:12px;color:#7f8eb5;margin:8px 0 18px}.card{background:#131b31;border:1px solid #273454;border-radius:16px;padding:20px;margin:18px 0}label{display:block;font-weight:700;margin:0 0 8px}textarea,input,select{width:100%;box-sizing:border-box;background:#0d1427;color:white;border:1px solid #344262;border-radius:10px;padding:12px;font:inherit}textarea{min-height:160px}.row,.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.btn{background:#6d5dfc;color:white;border:0;border-radius:10px;padding:12px 18px;font-weight:800;cursor:pointer}.btn:disabled{opacity:.42;cursor:not-allowed}.status{margin-top:12px;padding:12px;background:#0d1427;border-radius:10px}.bad{color:#ff6975;font-weight:800}.good{color:#72e6a3;font-weight:800}.scene{border:1px solid #344262;border-radius:12px;padding:14px;margin:12px 0;background:#0d1427}.scene textarea{min-height:90px}.sceneHead{display:flex;justify-content:space-between}.badge{border:1px solid #47577d;border-radius:999px;padding:4px 9px;font-size:12px}.video{max-width:100%;margin-top:15px;display:block}.download{display:inline-block;margin-top:10px;background:#245c46;color:white;text-decoration:none;padding:10px 14px;border-radius:9px;font-weight:800}.small{font-size:12px;color:#9eabd0}@media(max-width:700px){.row,.grid{grid-template-columns:1fr}}
 </style></head><body><main>
-<h1>AI Video Script Studio</h1><div class="muted">Script → scene development → scene-by-scene Wan 2.2 image-to-video</div><div class="version">Framework v24 • persistent script state • sequential scene generation • robust Wan stream handling</div>
+<h1>AI Video Script Studio</h1><div class="muted">Script → scene development → scene-by-scene Wan 2.2 image-to-video</div><div class="version">Framework v25 • persistent script state • sequential scene generation • robust Wan stream handling</div>
 <div class="card"><label for="script">1. Your script</label><textarea id="script" placeholder="Paste your complete story or script here."></textarea><div id="count" class="status bad">0 words — 20 required</div><div id="validation" class="status bad">Please enter at least 20 words before developing scenes.</div><div class="row" style="margin-top:14px"><div><label for="pace">Narration pace</label><select id="pace"><option value="130">Slow / cinematic — 130 words/min</option><option value="150" selected>Normal narration — 150 words/min</option><option value="170">Fast narration — 170 words/min</option></select></div><div><label for="minDuration">Minimum scene duration</label><input id="minDuration" type="number" min="2" max="10" step="0.5" value="3"></div></div><p class="muted">Your script is saved automatically in this browser. Refreshing the page will restore it and rebuild the scenes.</p><button id="develop" type="button" class="btn" disabled>Develop Scenes</button><div id="devStatus" class="status">Type at least 20 words.</div></div>
 <div id="sceneCard" class="card" style="display:none"><b>2. Developed scenes</b><div id="summary" class="muted" style="margin-top:5px"></div><div id="scenes"></div></div>
 <div class="card"><label for="quickImage">3. Quick Wan 2.2 scene test</label><input id="quickImage" type="file" accept="image/*"><div id="quickImageStatus" class="status">No image selected.</div><label style="margin-top:12px" for="quickPrompt">Motion prompt</label><textarea id="quickPrompt" style="min-height:100px">high quality, high resolution, cinematic motion, smooth animation</textarea><div class="row"><div><label for="quickDuration">Duration</label><input id="quickDuration" type="number" min="2" max="12" step="0.1" value="3.5"></div><div style="display:flex;align-items:end"><button id="quickGenerate" type="button" class="btn" style="width:100%">Generate Scene Video</button></div></div><div id="quickStatus" class="status">Choose an image and press Generate Scene Video.</div><div id="quickResult"></div></div>
@@ -22,56 +22,9 @@ body{font-family:system-ui;margin:0;background:#0b1020;color:#eef2ff}main{max-wi
 var MIN_WORDS=20,scriptEl=document.getElementById('script'),countEl=document.getElementById('count'),validationEl=document.getElementById('validation'),developBtn=document.getElementById('develop'),devStatus=document.getElementById('devStatus'),scenesEl=document.getElementById('scenes'),sceneCard=document.getElementById('sceneCard'),summaryEl=document.getElementById('summary');
 var STORAGE_KEY='aiVideoScriptStudioStateV2';
 var SCENE_STORAGE_KEY='aiVideoSceneStateV1';
-function saveSceneState(){
-  try{
-    var cards=document.querySelectorAll('.scene'),saved=[];
-    cards.forEach(function(card){
-      var video=card.querySelector('video'),download=card.querySelector('a.download'),btn=card.querySelector('.sceneBtn'),status=card.querySelector('.sceneStatus');
-      saved.push({
-        script:card.querySelector('.sceneScript')?.value||'',
-        visual:card.querySelector('.sceneVisual')?.value||'',
-        motion:card.querySelector('.sceneMotion')?.value||'',
-        videoSrc:video?.getAttribute('src')||'',
-        downloadHref:download?.getAttribute('href')||'',
-        statusText:status?.textContent||'',
-        statusClass:status?.className||'sceneStatus status',
-        buttonDisabled:!!btn?.disabled
-      });
-    });
-    localStorage.setItem(SCENE_STORAGE_KEY,JSON.stringify({script:scriptEl.value,scenes:saved}));
-  }catch(e){}
-}
-function restoreSceneState(){
-  try{
-    var raw=localStorage.getItem(SCENE_STORAGE_KEY);
-    if(!raw)return;
-    var state=JSON.parse(raw)||{};
-    if(state.script!==scriptEl.value||!Array.isArray(state.scenes))return;
-    var cards=document.querySelectorAll('.scene');
-    state.scenes.forEach(function(saved,i){
-      var card=cards[i];if(!card)return;
-      var a=card.querySelector('.sceneScript'),v=card.querySelector('.sceneVisual'),m=card.querySelector('.sceneMotion');
-      if(a&&typeof saved.script==='string')a.value=saved.script;
-      if(v&&typeof saved.visual==='string')v.value=saved.visual;
-      if(m&&typeof saved.motion==='string')m.value=saved.motion;
-      var status=card.querySelector('.sceneStatus'),btn=card.querySelector('.sceneBtn'),result=card.querySelector('.sceneResult');
-      if(status&&saved.statusText)status.textContent=saved.statusText;
-      if(status&&saved.statusClass)status.className=saved.statusClass;
-      if(btn&&typeof saved.buttonDisabled==='boolean')btn.disabled=saved.buttonDisabled;
-      if(result&&saved.videoSrc){
-        var src=esc(saved.videoSrc),href=esc(saved.downloadHref||saved.videoSrc);
-        result.innerHTML='<video class="video" controls playsinline src="'+src+'"></video><br><a class="download" download="scene-'+(i+1)+'.mp4" href="'+href+'">Download Scene '+(i+1)+' Video</a>';
-      }
-    });
-  }catch(e){}
-}
-function bindScenePersistence(){
-  document.querySelectorAll('.sceneScript,.sceneVisual,.sceneMotion').forEach(function(el){
-    el.addEventListener('input',saveSceneState);
-    el.addEventListener('change',saveSceneState);
-  });
-}
-
+function saveSceneState(){try{var cards=document.querySelectorAll('.scene'),saved=[];cards.forEach(function(card){var video=card.querySelector('video'),download=card.querySelector('a.download'),btn=card.querySelector('.sceneBtn'),status=card.querySelector('.sceneStatus');saved.push({script:card.querySelector('.sceneScript')?.value||'',visual:card.querySelector('.sceneVisual')?.value||'',motion:card.querySelector('.sceneMotion')?.value||'',videoSrc:video?.getAttribute('src')||'',downloadHref:download?.getAttribute('href')||'',statusText:status?.textContent||'',statusClass:status?.className||'sceneStatus status',buttonDisabled:!!btn?.disabled})});localStorage.setItem(SCENE_STORAGE_KEY,JSON.stringify({script:scriptEl.value,scenes:saved}))}catch(e){}}
+function restoreSceneState(){try{var raw=localStorage.getItem(SCENE_STORAGE_KEY);if(!raw)return;var state=JSON.parse(raw)||{};if(state.script!==scriptEl.value||!Array.isArray(state.scenes))return;var cards=document.querySelectorAll('.scene');state.scenes.forEach(function(saved,i){var card=cards[i];if(!card)return;var a=card.querySelector('.sceneScript'),v=card.querySelector('.sceneVisual'),m=card.querySelector('.sceneMotion');if(a&&typeof saved.script==='string')a.value=saved.script;if(v&&typeof saved.visual==='string')v.value=saved.visual;if(m&&typeof saved.motion==='string')m.value=saved.motion;var status=card.querySelector('.sceneStatus'),btn=card.querySelector('.sceneBtn'),result=card.querySelector('.sceneResult');if(status&&saved.statusText)status.textContent=saved.statusText;if(status&&saved.statusClass)status.className=saved.statusClass;if(btn&&typeof saved.buttonDisabled==='boolean')btn.disabled=saved.buttonDisabled;if(result&&saved.videoSrc){var src=esc(saved.videoSrc),href=esc(saved.downloadHref||saved.videoSrc);result.innerHTML='<video class="video" controls playsinline src="'+src+'"></video><br><a class="download" download="scene-'+(i+1)+'.mp4" href="'+href+'">Download Scene '+(i+1)+' Video</a>'}})}catch(e){}}
+function bindScenePersistence(){document.querySelectorAll('.sceneScript,.sceneVisual,.sceneMotion').forEach(function(el){el.addEventListener('input',saveSceneState);el.addEventListener('change',saveSceneState)})}
 function words(t){var s=String(t||'').trim();return s?s.split(/\s+/).filter(Boolean).length:0}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function saveState(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({script:scriptEl.value,pace:document.getElementById('pace').value,minDuration:document.getElementById('minDuration').value}))}catch(e){}}
@@ -83,43 +36,10 @@ function motion(t){var x=t.toLowerCase(),p=[];if(/fly|flying|run|walk|move|fight
 function develop(){updateCounter();if(words(scriptEl.value)<MIN_WORDS)return;saveState();developBtn.disabled=true;devStatus.textContent='Developing scenes...';setTimeout(function(){try{var parts=splitScenes(scriptEl.value),total=0;scenesEl.innerHTML='';parts.forEach(function(part,i){var d=durationFor(part),start=total;total+=d;var c=document.createElement('div');c.className='scene';c.innerHTML='<div class="sceneHead"><b>Scene '+(i+1)+'</b><span class="badge">'+d.toFixed(1)+' sec</span></div><div class="muted" style="margin:8px 0">Timeline: '+start.toFixed(1)+'s → '+total.toFixed(1)+'s</div><div class="grid"><div><label>Scene script / narration</label><textarea class="sceneScript">'+esc(part)+'</textarea></div><div><label>Visual description</label><textarea class="sceneVisual">Cinematic visual interpretation: '+esc(part)+'</textarea></div><div><label>Motion prompt</label><textarea class="sceneMotion">'+esc(motion(part))+'</textarea></div><div><label>Scene starting image</label><input class="sceneImage" type="file" accept="image/*"><div class="sceneImageStatus status">No image selected.</div></div></div><button type="button" class="btn sceneBtn" data-index="'+i+'" '+(i?'disabled':'')+'>Generate Scene '+(i+1)+' Video</button><div class="sceneStatus status">'+(i?'Locked until previous scene succeeds.':'Ready. Choose an image.')+'</div><div class="sceneResult"></div>';scenesEl.appendChild(c)});summaryEl.textContent=parts.length+' scenes • estimated total duration '+total.toFixed(1)+' seconds';sceneCard.style.display='block';scenesEl.querySelectorAll('.sceneImage').forEach(function(inp){inp.addEventListener('change',function(){this.parentElement.querySelector('.sceneImageStatus').textContent=this.files[0]?'IMAGE LOADED ✓ '+this.files[0].name:'No image selected.'})});scenesEl.querySelectorAll('.sceneBtn').forEach(function(b){b.addEventListener('click',function(){generateScene(Number(this.dataset.index),this)})});restoreSceneState();bindScenePersistence();saveSceneState();devStatus.textContent='Scene development complete ✓';sceneCard.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){devStatus.textContent='Scene development error: '+(e?.message||e)}finally{updateCounter()}},30)}
 developBtn.addEventListener('click',develop);
 function restoreState(){try{var raw=localStorage.getItem(STORAGE_KEY);if(!raw)return;var state=JSON.parse(raw)||{};if(typeof state.script==='string')scriptEl.value=state.script;if(state.pace!=null)document.getElementById('pace').value=state.pace;if(state.minDuration!=null)document.getElementById('minDuration').value=state.minDuration;updateCounter();if(words(scriptEl.value)>=MIN_WORDS)setTimeout(function(){develop()},100)}catch(e){updateCounter()}}
-function extractPath(v){if(v==null)return null;if(typeof v==='string'){var s=v.trim();if((s[0]==='{'||s[0]==='[')&&s.length<200000){try{return extractPath(JSON.parse(s))}catch{}}if(s.indexOf('/gradio_api/file=')>=0){var m=s.match(/https?:\/\/[^\s"']+\/gradio_api\/file=[^\s"']+|\/gradio_api\/file=[^\s"']+/);return m?m[0]:null}if(/^https?:\/\//.test(s)&&/\.(mp4|webm|mov)(\?|$)/i.test(s))return s;return null}if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}if(typeof v==='object'){if(typeof v.url==='string'&&v.url)return extractPath(v.url);if(typeof v.path==='string'&&v.path){var p=v.path.trim();if(p.indexOf('/gradio_api/file=')>=0)return extractPath(p);if(p.startsWith('/'))return '/gradio_api/file='+encodeURIComponent(p)}for(var k in v){var b=extractPath(v[k]);if(b)return b}}return null}
+function extractPath(v){if(v==null)return null;if(typeof v==='string'){var s=v.trim();if((s[0]==='{'||s[0]==='[')&&s.length<200000){try{return extractPath(JSON.parse(s))}catch{}}if(/\/gradio_api\/file=/.test(s)){var m=s.match(/https?:\/\/[^\s"']+\/gradio_api\/file=[^\s"']+|\/gradio_api\/file=[^\s"']+/);if(m)return m[0]}if(/^https?:\/\//.test(s)&&/\.(mp4|webm|mov)(\?|$)/i.test(s))return s;return null}if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}if(typeof v==='object'){if(typeof v.url==='string'&&v.url){var u=extractPath(v.url);if(u)return u}if(typeof v.path==='string'&&v.path){var p=v.path.trim();if(p.indexOf('/gradio_api/file=')>=0)return extractPath(p);if(p.startsWith('/'))return '/gradio_api/file='+encodeURIComponent(p)}if(typeof v.video==='string'){var q=extractPath(v.video);if(q)return q}for(var k in v){var b=extractPath(v[k]);if(b)return b}}return null}
 function parseSSEBlock(block){var event='message',dataLines=[];block.split(/\r?\n/).forEach(function(line){if(line.indexOf('event:')===0)event=line.slice(6).trim();else if(line.indexOf('data:')===0)dataLines.push(line.slice(5).trim())});var raw=dataLines.join('\n');if(!raw)return{event:event,data:null};if(raw==='null')return{event:event,data:null};try{return{event:event,data:JSON.parse(raw)}}catch{return{event:event,data:raw}}}
-async function waitForVideo(eventId,status){
-  if(!eventId)throw Error('Missing Wan event id');
-  var r=await fetch('/api/wan/stream?eventId='+encodeURIComponent(eventId)+'&ts='+Date.now(),{cache:'no-store'});
-  if(!r.ok)throw Error('Wan stream HTTP '+r.status);
-  if(!r.body)throw Error('Wan stream returned no body');
-  var reader=r.body.getReader(),decoder=new TextDecoder(),buffer='',lastProgress='';
-  function handle(block){
-    if(!block||!block.trim())return null;
-    var e=parseSSEBlock(block);
-    if(e.event==='error'){
-      if(e.data===null)return null;
-      var msg=typeof e.data==='string'?e.data:JSON.stringify(e.data);
-      if(msg&&msg!=='null')throw Error('Wan generation error: '+msg);
-      return null;
-    }
-    var path=extractPath(e.data);
-    if(path)return path;
-    if(e.data!==null){
-      var text=typeof e.data==='string'?e.data:JSON.stringify(e.data);
-      if(text&&text!=='null'&&text!==lastProgress){lastProgress=text;status.textContent='Wan 2.2 is generating... '+text.slice(0,180)}
-    }
-    return null;
-  }
-  while(true){
-    var part=await reader.read();
-    if(part.done)break;
-    buffer+=decoder.decode(part.value,{stream:true});
-    var blocks=buffer.split(/\r?\n\r?\n/);
-    buffer=blocks.pop()||'';
-    for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found;}
-  }
-  buffer+=decoder.decode();
-  var tail=handle(buffer);if(tail)return tail;
-  throw Error('Wan stream ended without a video file. The job may have failed on Hugging Face.');
-}
+async function waitForVideo(eventId,status){if(!eventId)throw Error('Missing Wan event id');var r=await fetch('/api/wan/stream?eventId='+encodeURIComponent(eventId)+'&ts='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error('Wan stream HTTP '+r.status);if(!r.body)throw Error('Wan stream returned no body');var reader=r.body.getReader(),decoder=new TextDecoder(),buffer='',lastProgress='';function handle(block){if(!block||!block.trim())return null;var e=parseSSEBlock(block);if(e.event==='error'){if(e.data===null)return null;var msg=typeof e.data==='string'?e.data:JSON.stringify(e.data);if(msg&&msg!=='null')throw Error('Wan generation error: '+msg);return null}var path=extractPath(e.data);if(path)return path;if(e.data!==null){var text=typeof e.data==='string'?e.data:JSON.stringify(e.data);if(text&&text!=='null'&&text!==lastProgress){lastProgress=text;status.textContent='Wan 2.2 is generating... '+text.slice(0,180)}}return null}
+while(true){var part=await reader.read();if(part.done)break;buffer+=decoder.decode(part.value,{stream:true});var blocks=buffer.split(/\r?\n\r?\n/);buffer=blocks.pop()||'';for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found}}buffer+=decoder.decode();var tail=handle(buffer);if(tail)return tail;throw Error(lastProgress?'Wan stream ended before video output. Last response: '+lastProgress.slice(0,500):'Wan stream ended without a video file. The job may have failed on Hugging Face.')}
 async function generateScene(index,button){var cards=document.querySelectorAll('.scene'),card=cards[index],image=card.querySelector('.sceneImage').files[0],status=card.querySelector('.sceneStatus'),result=card.querySelector('.sceneResult');if(!image){status.textContent='STOPPED: choose a starting image for this scene.';return}button.disabled=true;try{var fd=new FormData();fd.append('image',image,image.name);fd.append('prompt',card.querySelector('.sceneMotion').value+' '+card.querySelector('.sceneVisual').value);fd.append('duration',String(durationFor(card.querySelector('.sceneScript').value)));status.textContent='Image loaded ✓. Sending image to Cloudflare → Hugging Face...';var r=await fetch('/api/wan/start?ts='+Date.now(),{method:'POST',body:fd,cache:'no-store'}),data=await r.json();if(!r.ok||!data.ok)throw Error(data.error||'Video request failed');status.textContent='Wan 2.2 job submitted ✓. Waiting for generation...';var path=await waitForVideo(data.eventId,status);var url='/api/wan/file?path='+encodeURIComponent(path)+'&ts='+Date.now();result.innerHTML='<video class="video" controls playsinline src="'+esc(url)+'"></video><br><a class="download" download="scene-'+(index+1)+'.mp4" href="'+esc(url)+'">Download Scene '+(index+1)+' Video</a>';status.className='sceneStatus status good';status.textContent='Scene '+(index+1)+' video generated successfully ✓ Download it now before continuing.';if(cards[index+1]){var next=cards[index+1],nb=next.querySelector('.sceneBtn');nb.disabled=false;next.querySelector('.sceneStatus').textContent='Previous scene succeeded ✓. Choose a starting image and generate this scene.';next.scrollIntoView({behavior:'smooth',block:'start'});saveSceneState()}}catch(e){status.className='sceneStatus status bad';status.textContent='ERROR: '+(e?.message||String(e));button.disabled=false;saveSceneState()}}
 var qi=document.getElementById('quickImage'),qs=document.getElementById('quickImageStatus');qi.addEventListener('change',function(){qs.textContent=this.files[0]?'IMAGE LOADED ✓ '+this.files[0].name:'No image selected.'});document.getElementById('quickGenerate').addEventListener('click',async function(){var image=qi.files[0],status=document.getElementById('quickStatus'),result=document.getElementById('quickResult'),button=this;if(!image){status.textContent='STOPPED: choose an image.';return}button.disabled=true;try{var fd=new FormData();fd.append('image',image,image.name);fd.append('prompt',document.getElementById('quickPrompt').value);fd.append('duration',document.getElementById('quickDuration').value);status.textContent='Sending image to Wan 2.2...';var r=await fetch('/api/wan/start?ts='+Date.now(),{method:'POST',body:fd,cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Video request failed');status.textContent='Wan 2.2 job submitted ✓. Waiting...';var p=await waitForVideo(d.eventId,status),u='/api/wan/file?path='+encodeURIComponent(p)+'&ts='+Date.now();result.innerHTML='<video class="video" controls playsinline src="'+esc(u)+'"></video><br><a class="download" download="scene-test.mp4" href="'+esc(u)+'">Download Video</a>';status.className='status good';status.textContent='Video generated successfully ✓'}catch(e){status.className='status bad';status.textContent='ERROR: '+(e?.message||String(e))}finally{button.disabled=false}});
 updateCounter();restoreState();
