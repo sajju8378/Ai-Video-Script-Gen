@@ -38,8 +38,41 @@ developBtn.addEventListener('click',develop);
 function restoreState(){try{var raw=localStorage.getItem(STORAGE_KEY);if(!raw)return;var state=JSON.parse(raw)||{};if(typeof state.script==='string')scriptEl.value=state.script;if(state.pace!=null)document.getElementById('pace').value=state.pace;if(state.minDuration!=null)document.getElementById('minDuration').value=state.minDuration;updateCounter();if(words(scriptEl.value)>=MIN_WORDS)setTimeout(function(){develop()},100)}catch(e){updateCounter()}}
 function extractPath(v){if(v==null)return null;if(typeof v==='string'){var s=v.trim();if((s[0]==='{'||s[0]==='[')&&s.length<200000){try{return extractPath(JSON.parse(s))}catch{}}if(/\/gradio_api\/file=/.test(s)){var m=s.match(/https?:\/\/[^\s"']+\/gradio_api\/file=[^\s"']+|\/gradio_api\/file=[^\s"']+/);if(m)return m[0]}if(/^https?:\/\//.test(s)&&/\.(mp4|webm|mov)(\?|$)/i.test(s))return s;return null}if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}if(typeof v==='object'){if(typeof v.url==='string'&&v.url){var u=extractPath(v.url);if(u)return u}if(typeof v.path==='string'&&v.path){var p=v.path.trim();if(p.indexOf('/gradio_api/file=')>=0)return extractPath(p);if(p.startsWith('/'))return '/gradio_api/file='+encodeURIComponent(p)}if(typeof v.video==='string'){var q=extractPath(v.video);if(q)return q}for(var k in v){var b=extractPath(v[k]);if(b)return b}}return null}
 function parseSSEBlock(block){var event='message',dataLines=[];block.split(/\r?\n/).forEach(function(line){if(line.indexOf('event:')===0)event=line.slice(6).trim();else if(line.indexOf('data:')===0)dataLines.push(line.slice(5).trim())});var raw=dataLines.join('\n');if(!raw)return{event:event,data:null};if(raw==='null')return{event:event,data:null};try{return{event:event,data:JSON.parse(raw)}}catch{return{event:event,data:raw}}}
-async function waitForVideo(eventId,status){if(!eventId)throw Error('Missing Wan event id');var r=await fetch('/api/wan/stream?eventId='+encodeURIComponent(eventId)+'&ts='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error('Wan stream HTTP '+r.status);if(!r.body)throw Error('Wan stream returned no body');var reader=r.body.getReader(),decoder=new TextDecoder(),buffer='',lastProgress='';function handle(block){if(!block||!block.trim())return null;var e=parseSSEBlock(block);if(e.event==='error'){if(e.data===null)return null;var msg=typeof e.data==='string'?e.data:JSON.stringify(e.data);if(msg&&msg!=='null')throw Error('Wan generation error: '+msg);return null}var path=extractPath(e.data);if(path)return path;if(e.data!==null){var text=typeof e.data==='string'?e.data:JSON.stringify(e.data);if(text&&text!=='null'&&text!==lastProgress){lastProgress=text;status.textContent='Wan 2.2 is generating... '+text.slice(0,180)}}return null}
-while(true){var part=await reader.read();if(part.done)break;buffer+=decoder.decode(part.value,{stream:true});var blocks=buffer.split(/\r?\n\r?\n/);buffer=blocks.pop()||'';for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found}}buffer+=decoder.decode();var tail=handle(buffer);if(tail)return tail;throw Error(lastProgress?'Wan stream ended before video output. Last response: '+lastProgress.slice(0,500):'Wan stream ended without a video file. The job may have failed on Hugging Face.')}
+async function waitForVideo(eventId,status){
+  if(!eventId)throw Error('Missing Wan event id');
+  var r=await fetch('/api/wan/stream?eventId='+encodeURIComponent(eventId)+'&ts='+Date.now(),{cache:'no-store'});
+  if(!r.ok)throw Error('Wan stream HTTP '+r.status);
+  if(!r.body)throw Error('Wan stream returned no body');
+  var reader=r.body.getReader(),decoder=new TextDecoder(),buffer='',lastProgress='';
+  function handle(block){
+    if(!block||!block.trim())return null;
+    var e=parseSSEBlock(block);
+    if(e.event==='error'){
+      if(e.data===null)return null;
+      var msg=typeof e.data==='string'?e.data:JSON.stringify(e.data);
+      if(msg&&msg!=='null')throw Error('Wan generation error: '+msg);
+      return null;
+    }
+    var path=extractPath(e.data);
+    if(path)return path;
+    if(e.data!==null){
+      var text=typeof e.data==='string'?e.data:JSON.stringify(e.data);
+      if(text&&text!=='null'&&text!==lastProgress){lastProgress=text;status.textContent='Wan 2.2 is generating... '+text.slice(0,180)}
+    }
+    return null;
+  }
+  while(true){
+    var part=await reader.read();
+    if(part.done)break;
+    buffer+=decoder.decode(part.value,{stream:true});
+    var blocks=buffer.split(/\r?\n\r?\n/);
+    buffer=blocks.pop()||'';
+    for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found;}
+  }
+  buffer+=decoder.decode();
+  var tail=handle(buffer);if(tail)return tail;
+  throw Error('Wan stream ended without a video file. The job may have failed on Hugging Face.');
+}
 async function generateScene(index,button){var cards=document.querySelectorAll('.scene'),card=cards[index],image=card.querySelector('.sceneImage').files[0],status=card.querySelector('.sceneStatus'),result=card.querySelector('.sceneResult');if(!image){status.textContent='STOPPED: choose a starting image for this scene.';return}button.disabled=true;try{var fd=new FormData();fd.append('image',image,image.name);fd.append('prompt',card.querySelector('.sceneMotion').value+' '+card.querySelector('.sceneVisual').value);fd.append('duration',String(durationFor(card.querySelector('.sceneScript').value)));status.textContent='Image loaded ✓. Sending image to Cloudflare → Hugging Face...';var r=await fetch('/api/wan/start?ts='+Date.now(),{method:'POST',body:fd,cache:'no-store'}),data=await r.json();if(!r.ok||!data.ok)throw Error(data.error||'Video request failed');status.textContent='Wan 2.2 job submitted ✓. Waiting for generation...';var path=await waitForVideo(data.eventId,status);var url='/api/wan/file?path='+encodeURIComponent(path)+'&ts='+Date.now();result.innerHTML='<video class="video" controls playsinline src="'+esc(url)+'"></video><br><a class="download" download="scene-'+(index+1)+'.mp4" href="'+esc(url)+'">Download Scene '+(index+1)+' Video</a>';status.className='sceneStatus status good';status.textContent='Scene '+(index+1)+' video generated successfully ✓ Download it now before continuing.';if(cards[index+1]){var next=cards[index+1],nb=next.querySelector('.sceneBtn');nb.disabled=false;next.querySelector('.sceneStatus').textContent='Previous scene succeeded ✓. Choose a starting image and generate this scene.';next.scrollIntoView({behavior:'smooth',block:'start'});saveSceneState()}}catch(e){status.className='sceneStatus status bad';status.textContent='ERROR: '+(e?.message||String(e));button.disabled=false;saveSceneState()}}
 var qi=document.getElementById('quickImage'),qs=document.getElementById('quickImageStatus');qi.addEventListener('change',function(){qs.textContent=this.files[0]?'IMAGE LOADED ✓ '+this.files[0].name:'No image selected.'});document.getElementById('quickGenerate').addEventListener('click',async function(){var image=qi.files[0],status=document.getElementById('quickStatus'),result=document.getElementById('quickResult'),button=this;if(!image){status.textContent='STOPPED: choose an image.';return}button.disabled=true;try{var fd=new FormData();fd.append('image',image,image.name);fd.append('prompt',document.getElementById('quickPrompt').value);fd.append('duration',document.getElementById('quickDuration').value);status.textContent='Sending image to Wan 2.2...';var r=await fetch('/api/wan/start?ts='+Date.now(),{method:'POST',body:fd,cache:'no-store'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Video request failed');status.textContent='Wan 2.2 job submitted ✓. Waiting...';var p=await waitForVideo(d.eventId,status),u='/api/wan/file?path='+encodeURIComponent(p)+'&ts='+Date.now();result.innerHTML='<video class="video" controls playsinline src="'+esc(u)+'"></video><br><a class="download" download="scene-test.mp4" href="'+esc(u)+'">Download Video</a>';status.className='status good';status.textContent='Video generated successfully ✓'}catch(e){status.className='status bad';status.textContent='ERROR: '+(e?.message||String(e))}finally{button.disabled=false}});
 updateCounter();restoreState();
