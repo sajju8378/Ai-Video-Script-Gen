@@ -95,7 +95,9 @@ async function waitForVideo(eventId,status){
     var part=await reader.read();
     if(part.done)break;
     buffer+=decoder.decode(part.value,{stream:true});
-    var blocks=buffer.split(/\r?\n\r?\n/);
+    var blocks=buffer.split(/?
+?
+/);
     buffer=blocks.pop()||'';
     for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found;}
   }
