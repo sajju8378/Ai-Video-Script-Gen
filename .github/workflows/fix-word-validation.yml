@@ -1,0 +1,35 @@
+name: Fix script word validation
+on:
+  push:
+    branches: [main]
+jobs:
+  fix:
+    if: "!contains(github.event.head_commit.message, '[fix-word-validation]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch only script validation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/app.js')
+          s=p.read_text()
+          s=s.replace("const MIN=20;", "const MIN=1;", 1)
+          s=s.replace("var MIN_WORDS=20,scriptEl=", "var MIN_WORDS=1,scriptEl=", 1)
+          s=s.replace("Please enter at least 20 words before developing scenes.", "Please enter your script before developing scenes.")
+          s=s.replace("20 required", "1 required")
+          s=s.replace("minimum reached ✓", "script ready ✓")
+          s=s.replace("Script ready ✓. Develop Scenes is enabled.", "Script ready ✓. Develop Scenes is enabled.")
+          s=s.replace("Type at least '+(MIN_WORDS-n)+' more word'+(MIN_WORDS-n===1?'':'s')+'.'", "Enter your script to continue.")
+          p.write_text(s)
+          PY
+      - name: Commit validation-only fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix script word validation without touching Wan [fix-word-validation]'
+          git push
