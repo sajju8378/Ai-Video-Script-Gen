@@ -1,0 +1,72 @@
+name: Apply robust Wan fix
+on:
+  push:
+    branches: [main]
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[wan-robust-fix]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Wan result handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('src/app.js')
+          s=p.read_text()
+          # Enable the Space's Safe Mode to reduce unfinished ZeroGPU jobs.
+          s=s.replace("const data=[input,null,prompt,4,NEG,duration,1,1,42,true,5,'UniPCMultistep',3,16,false,true];","const data=[input,null,prompt,4,NEG,duration,1,1,42,true,5,'UniPCMultistep',3,16,true,true];",1)
+          # Make FileData extraction accept direct /tmp/*.mp4 paths as well as Gradio URLs.
+          pat=r'function extractPath\(v\)\{.*?\}\nfunction parseSSEBlock\('
+          repl=r'''function extractPath(v){
+          if(v===null||v===undefined)return null;
+          if(typeof v==='string'){
+            var s=v.trim();
+            if(!s)return null;
+            var fm=s.match(/(?:https?:\\/\\/[^\\s"']+|\\/[^\\s"']*\\/file=[^\\s"']+)/i);
+            if(fm&&/\\.(mp4|webm|mov)(?:\\?|$)/i.test(fm[0])){
+              var u=fm[0];
+              if(u.indexOf('/gradio_api/file=')>=0)return u;
+              if(u.indexOf('/file=')>=0)return '/gradio_api'+u.slice(u.indexOf('/file='));
+              return u;
+            }
+            if(/\\.(mp4|webm|mov)(?:\\?|$)/i.test(s)){
+              if(/^https?:\\/\\//i.test(s))return s;
+              if(s.startsWith('/gradio_api/file='))return s;
+              if(s.startsWith('/file='))return '/gradio_api'+s;
+              if(s.startsWith('/'))return '/gradio_api/file='+encodeURIComponent(s);
+            }
+            return null;
+          }
+          if(Array.isArray(v)){for(var i=0;i<v.length;i++){var a=extractPath(v[i]);if(a)return a}return null}
+          if(typeof v==='object'){
+            if(v.url){var u=extractPath(v.url);if(u)return u}
+            if(v.path){var pth=extractPath(v.path);if(pth)return pth}
+            if(v.video){var q=extractPath(v.video);if(q)return q}
+            if(v.output){var o=extractPath(v.output);if(o)return o}
+            if(v.data){var d=extractPath(v.data);if(d)return d}
+            for(var k in v){var b=extractPath(v[k]);if(b)return b}
+          }
+          return null;
+          }
+          function parseSSEBlock('''
+          ns,n=re.subn(pat,repl,s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('extractPath target not found')
+          s=ns
+          # Do not silently swallow a Hugging Face error event with null data.
+          s=s.replace("if(e.data===null)return null;","if(e.data===null)throw Error('Hugging Face Wan job failed or was stopped before producing a video. This can be caused by ZeroGPU quota/server capacity.');",1)
+          # Accept both modern and legacy Gradio file URL prefixes.
+          s=s.replace("}else if(p.startsWith('/gradio_api/file=')){target=hfBase(env)+p}else{return json({error:'Invalid video path'},400)}","}else if(p.startsWith('/gradio_api/file=')){target=hfBase(env)+p}else if(p.startsWith('/file=')){target=hfBase(env)+'/gradio_api'+p}else{return json({error:'Invalid video path'},400)}",1)
+          p.write_text(s)
+          PY
+      - name: Commit Wan robust fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Harden Wan result handling [wan-robust-fix]'
+          git push
