@@ -1,0 +1,45 @@
+name: Fix script reader only
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair only broken JavaScript escape sequences
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/app.js')
+          s = p.read_text()
+          replacements = [
+              (r's.split(/\\s+/)', r's.split(/\s+/)'),
+              (r'var blocks=s.split(/\\\n\\s*\\\n+/)', r'var blocks=s.split(/\n\s*\n+/)'),
+              (r'block.split(/\\r\?\\\n/)', r'block.split(/\r?\n/)'),
+              (r"dataLines.join('\\\n')", r"dataLines.join('\n')"),
+              (r'var blocks=buffer.split(/\\r\?\\\n\\r\?\\\n/)', r'var blocks=buffer.split(/\r?\n\r?\n/)'),
+          ]
+          changed = 0
+          for old, new in replacements:
+              if old in s:
+                  s = s.replace(old, new, 1)
+                  changed += 1
+          if changed != len(replacements):
+              raise SystemExit(f'Refusing to change code: expected {len(replacements)} exact broken patterns, found {changed}.')
+          p.write_text(s)
+          PY
+      - name: Commit surgical fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix script reader JavaScript escapes only'
+          git push
