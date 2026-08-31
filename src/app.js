@@ -28,7 +28,7 @@ function bindScenePersistence(){document.querySelectorAll('.sceneScript,.sceneVi
 function words(t){var s=String(t||'').trim();return s?s.split(/\s+/).filter(Boolean).length:0}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function saveState(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({script:scriptEl.value,pace:document.getElementById('pace').value,minDuration:document.getElementById('minDuration').value}))}catch(e){}}
-function updateCounter(){var n=words(scriptEl.value),ok=n>=MIN_WORDS;countEl.textContent=n+' words — '+(ok?'script ready ✓':(MIN_WORDS-n)+' more required');countEl.className='status '+(ok?'good':'bad');validationEl.className='status '+(ok?'good':'bad');validationEl.textContent=ok?'Script ready ✓. Develop Scenes is enabled.':'Please enter your script before developing scenes. Current count: '+n+'.';developBtn.disabled=!ok;if(ok)devStatus.textContent='Script ready ✓. Press Develop Scenes.';else devStatus.textContent='Enter your script to continue.}
+function updateCounter(){var n=words(scriptEl.value),ok=n>=MIN_WORDS;countEl.textContent=n+' words — '+(ok?'script ready ✓':(MIN_WORDS-n)+' more required');countEl.className='status '+(ok?'good':'bad');validationEl.className='status '+(ok?'good':'bad');validationEl.textContent=ok?'Script ready ✓. Develop Scenes is enabled.':'Please enter your script before developing scenes.';developBtn.disabled=!ok;if(ok)devStatus.textContent='Script ready ✓. Press Develop Scenes.';else devStatus.textContent='Enter your script to continue.';}
 scriptEl.addEventListener('input',function(){saveState();updateCounter()});scriptEl.addEventListener('change',function(){saveState();updateCounter()});scriptEl.addEventListener('keyup',function(){saveState();updateCounter()});document.getElementById('pace').addEventListener('change',saveState);document.getElementById('minDuration').addEventListener('change',saveState);window.addEventListener('beforeunload',saveState);
 function splitScenes(text){var s=String(text||'').replace(/\r/g,'').trim();if(!s)return[];var blocks=s.split(/\n\s*\n+/).map(function(x){return x.trim()}).filter(Boolean);if(blocks.length>1)return blocks;var sentences=s.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[s],out=[],buf='',cue=/\b(suddenly|later|meanwhile|finally|then|afterwards|after that|next morning|that night|the next day|outside|inside|near)\b/i;function flush(){if(buf.trim()){out.push(buf.trim());buf=''}}sentences.forEach(function(raw,i){var x=raw.trim();if(i>0&&cue.test(x)){flush();buf=x;return}var c=(buf?buf+' ':'')+x;if(words(c)>45){flush();buf=x}else buf=c});flush();return out.length?out:[s]}
 function durationFor(t){var pace=Number(document.getElementById('pace').value)||150,min=Math.max(2,Number(document.getElementById('minDuration').value)||3);return Math.max(min,Math.min(12,Math.round((words(t)/pace*60)*2)/2))}
@@ -95,8 +95,10 @@ async function waitForVideo(eventId,status){
     var part=await reader.read();
     if(part.done)break;
     buffer+=decoder.decode(part.value,{stream:true});
-    var blocks=buffer.split(/?
-?
+    var blocks=buffer.split(/
+?
+
+?
 /);
     buffer=blocks.pop()||'';
     for(var i=0;i<blocks.length;i++){var found=handle(blocks[i]);if(found)return found;}
